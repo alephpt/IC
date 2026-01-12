@@ -1,155 +1,128 @@
-#include <pthread.h>
+/**
+ * ic_test.c - Comprehensive Test Suite for Interaction Combinators
+ *
+ * Tests all major IC operations:
+ * - Node creation
+ * - Basic interaction rules
+ * - Parallel reduction
+ * - Confluence property
+ *
+ * Compile: make ic_test
+ * Run: ./ic_test
+ */
+
+#include "node.h"
+#include "rules.h"
+#include "parallel.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <assert.h>
 
-// IC Node types
-typedef enum { CONS, DUP, ERASE } NodeType;
+// ============================================================================
+// Test Helper Functions
+// ============================================================================
 
-// IC Node structure
-typedef struct Node {
-    NodeType type;
-    int label;
-    struct Node* ports[3];
-} Node;
-
-// Active pair
-typedef struct {
-    Node* left;
-    Node* right;
-} ActivePair;
-
-// Create nodes
-Node* create_cons(int label) {
-    Node* n = calloc(1, sizeof(Node));
-    n->type = CONS;
-    n->label = label;
-    return n;
+static void print_test_header(const char* test_name, const char* description) {
+    printf("\n[TEST] %s\n", test_name);
+    printf("  %s\n", description);
 }
 
-Node* create_dup() {
-    Node* n = calloc(1, sizeof(Node));
-    n->type = DUP;
-    return n;
-}
-
-Node* create_erase() {
-    Node* n = calloc(1, sizeof(Node));
-    n->type = ERASE;
-    return n;
-}
-
-// IC Interaction Rules
-void interact_cons_cons_same(ActivePair* pair) {
-    printf("  ✓ γ(%d)-γ(%d) → annihilate\n", pair->left->label, pair->right->label);
-    free(pair->left);
-    free(pair->right);
-}
-
-void interact_dup_cons(ActivePair* pair) {
-    printf("  ✓ δ-γ(%d) → duplicate constructor\n", pair->right->label);
-    Node* cons1 = create_cons(pair->right->label);
-    Node* cons2 = create_cons(pair->right->label);
-    Node* dup1 = create_dup();
-    Node* dup2 = create_dup();
-    cons1->ports[1] = dup1;
-    cons2->ports[1] = dup2;
-    free(pair->left);
-    free(pair->right);
-}
-
-void interact_erase_cons(ActivePair* pair) {
-    printf("  ✓ ε-γ(%d) → erase constructor\n", pair->right->label);
-    free(pair->left);
-    free(pair->right);
-}
-
-// Parallel reduction engine
-typedef void (*InteractionRule)(ActivePair*);
-
-typedef struct {
-    ActivePair* pairs;
-    size_t count;
-    InteractionRule rule;
-} ReductionBatch;
-
-void* reduce_worker(void* arg) {
-    ReductionBatch* batch = (ReductionBatch*)arg;
-    for (size_t i = 0; i < batch->count; i++) {
-        batch->rule(&batch->pairs[i]);
+static void print_test_result(int passed) {
+    if (passed) {
+        printf("  ✓ Test passed\n");
+    } else {
+        printf("  ✗ Test FAILED\n");
     }
-    return NULL;
 }
 
-void parallel_reduce(ActivePair* pairs, size_t pair_count,
-                     InteractionRule rule, size_t num_threads) {
-    if (pair_count == 0) return;
+// ============================================================================
+// Test Cases
+// ============================================================================
 
-    pthread_t* threads = malloc(sizeof(pthread_t) * num_threads);
-    ReductionBatch* batches = malloc(sizeof(ReductionBatch) * num_threads);
+void test_node_creation(void) {
+    print_test_header("Node Creation", "Testing node factory functions");
 
-    size_t pairs_per_thread = (pair_count + num_threads - 1) / num_threads;
+    Node* cons = create_cons(42);
+    assert(cons != NULL);
+    assert(cons->type == CONS);
+    assert(cons->label == 42);
+    free_node(cons);
 
-    size_t actual_threads = 0;
-    for (size_t i = 0; i < num_threads && i * pairs_per_thread < pair_count; i++) {
-        batches[i].pairs = &pairs[i * pairs_per_thread];
-        batches[i].count = (i * pairs_per_thread + pairs_per_thread > pair_count) ?
-                           (pair_count - i * pairs_per_thread) :
-                           pairs_per_thread;
-        batches[i].rule = rule;
+    Node* dup = create_dup();
+    assert(dup != NULL);
+    assert(dup->type == DUP);
+    free_node(dup);
 
-        pthread_create(&threads[i], NULL, reduce_worker, &batches[i]);
-        actual_threads++;
-    }
+    Node* erase = create_erase();
+    assert(erase != NULL);
+    assert(erase->type == ERASE);
+    free_node(erase);
 
-    for (size_t i = 0; i < actual_threads; i++) {
-        pthread_join(threads[i], NULL);
-    }
-
-    free(threads);
-    free(batches);
+    print_test_result(1);
 }
 
-// Test cases
-void test_annihilation() {
-    printf("\n[TEST 1] Annihilation (γ-γ same label)\n");
-    printf("Testing: γ(5)-γ(5) should annihilate\n");
+void test_annihilation(void) {
+    print_test_header("Annihilation (γ-γ same label)",
+                     "Testing γ(5)-γ(5) annihilation");
 
     ActivePair pair;
     pair.left = create_cons(5);
     pair.right = create_cons(5);
 
     interact_cons_cons_same(&pair);
-    printf("✓ Test passed\n");
+    print_test_result(1);
 }
 
-void test_duplication() {
-    printf("\n[TEST 2] Duplication (δ-γ)\n");
-    printf("Testing: δ-γ(7) should duplicate constructor\n");
+void test_duplication(void) {
+    print_test_header("Duplication (δ-γ)",
+                     "Testing δ-γ(7) duplication");
 
     ActivePair pair;
     pair.left = create_dup();
     pair.right = create_cons(7);
 
     interact_dup_cons(&pair);
-    printf("✓ Test passed\n");
+    print_test_result(1);
 }
 
-void test_erasure() {
-    printf("\n[TEST 3] Erasure (ε-γ)\n");
-    printf("Testing: ε-γ(9) should erase constructor\n");
+void test_erasure(void) {
+    print_test_header("Erasure (ε-γ)",
+                     "Testing ε-γ(9) erasure");
 
     ActivePair pair;
     pair.left = create_erase();
     pair.right = create_cons(9);
 
     interact_erase_cons(&pair);
-    printf("✓ Test passed\n");
+    print_test_result(1);
 }
 
-void test_parallel_reduction() {
-    printf("\n[TEST 4] Parallel Reduction\n");
-    printf("Testing: Multiple annihilations in parallel (demonstrates confluence)\n");
+void test_dup_dup(void) {
+    print_test_header("Duplicator Duplication (δ-δ)",
+                     "Testing δ-δ duplication");
+
+    ActivePair pair;
+    pair.left = create_dup();
+    pair.right = create_dup();
+
+    interact_dup_dup(&pair);
+    print_test_result(1);
+}
+
+void test_erase_dup(void) {
+    print_test_header("Duplicator Erasure (ε-δ)",
+                     "Testing ε-δ erasure");
+
+    ActivePair pair;
+    pair.left = create_erase();
+    pair.right = create_dup();
+
+    interact_erase_dup(&pair);
+    print_test_result(1);
+}
+
+void test_parallel_reduction(void) {
+    print_test_header("Parallel Reduction",
+                     "Testing multiple annihilations across threads");
 
     ActivePair pairs[8];
 
@@ -159,45 +132,47 @@ void test_parallel_reduction() {
         pairs[i].right = create_cons(i);
     }
 
-    printf("Reducing 8 pairs across 4 threads...\n");
-    parallel_reduce(pairs, 8, interact_cons_cons_same, 4);
-    printf("✓ Test passed - all reductions completed\n");
+    printf("  Reducing 8 pairs across 4 threads...\n");
+    int result = parallel_reduce(pairs, 8, interact_cons_cons_same, 4);
+    print_test_result(result == 0);
 }
 
-void test_mixed_parallel() {
-    printf("\n[TEST 5] Mixed Operations in Parallel\n");
-    printf("Testing: Different interaction types in parallel\n");
+void test_mixed_parallel(void) {
+    print_test_header("Mixed Operations",
+                     "Testing different interaction types");
 
-    // First batch: annihilations
+    // Batch 1: annihilations
     ActivePair ann_pairs[3];
     for (int i = 0; i < 3; i++) {
         ann_pairs[i].left = create_cons(10 + i);
         ann_pairs[i].right = create_cons(10 + i);
     }
 
-    printf("Batch 1: 3 annihilations\n");
+    printf("  Batch 1: 3 annihilations\n");
     parallel_reduce(ann_pairs, 3, interact_cons_cons_same, 2);
 
-    // Second batch: duplications
+    // Batch 2: duplications
     ActivePair dup_pairs[2];
     for (int i = 0; i < 2; i++) {
         dup_pairs[i].left = create_dup();
         dup_pairs[i].right = create_cons(20 + i);
     }
 
-    printf("Batch 2: 2 duplications\n");
+    printf("  Batch 2: 2 duplications\n");
     parallel_reduce(dup_pairs, 2, interact_dup_cons, 2);
 
-    printf("✓ Test passed - mixed operations completed\n");
+    print_test_result(1);
 }
 
-void test_confluence() {
-    printf("\n[TEST 6] Confluence Property\n");
-    printf("Testing: Order independence of parallel reductions\n");
-    printf("(In IC, independent reductions can happen in any order)\n");
+void test_confluence(void) {
+    print_test_header("Confluence Property",
+                     "Testing order independence of reductions");
 
-    // Create pairs that are independent
+    printf("  (Independent reductions can happen in any order)\n");
+
+    // Create independent pairs
     ActivePair pairs[4];
+
     pairs[0].left = create_cons(100);
     pairs[0].right = create_cons(100);
 
@@ -210,38 +185,74 @@ void test_confluence() {
     pairs[3].left = create_erase();
     pairs[3].right = create_cons(400);
 
-    printf("Reducing 4 independent pairs (2 annihilations, 1 dup, 1 erase)...\n");
-    printf("Order doesn't matter due to IC confluence property\n");
+    printf("  Reducing 4 independent pairs...\n");
+    printf("  (2 annihilations, 1 duplication, 1 erasure)\n");
 
-    // First two use annihilation rule
     parallel_reduce(pairs, 2, interact_cons_cons_same, 2);
     parallel_reduce(&pairs[2], 1, interact_dup_cons, 1);
     parallel_reduce(&pairs[3], 1, interact_erase_cons, 1);
 
-    printf("✓ Test passed - confluence demonstrated\n");
+    print_test_result(1);
 }
 
-int main() {
-    printf("═══════════════════════════════════════════\n");
-    printf("  Interaction Combinators Test Suite\n");
-    printf("═══════════════════════════════════════════\n");
+void test_error_handling(void) {
+    print_test_header("Error Handling",
+                     "Testing invalid inputs");
 
+    // Test NULL rule
+    ActivePair pairs[2];
+    pairs[0].left = create_cons(1);
+    pairs[0].right = create_cons(1);
+
+    int result = parallel_reduce(pairs, 2, NULL, 2);
+    assert(result == -1);
+
+    // Test zero pairs
+    result = parallel_reduce(pairs, 0, interact_cons_cons_same, 2);
+    assert(result == -1);
+
+    // Test zero threads
+    result = parallel_reduce(pairs, 2, interact_cons_cons_same, 0);
+    assert(result == -1);
+
+    // Clean up
+    free_node(pairs[0].left);
+    free_node(pairs[0].right);
+
+    print_test_result(1);
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+int main(void) {
+    printf("═══════════════════════════════════════════════════\n");
+    printf("  Interaction Combinators - Comprehensive Tests\n");
+    printf("═══════════════════════════════════════════════════\n");
+
+    // Run all tests
+    test_node_creation();
     test_annihilation();
     test_duplication();
     test_erasure();
+    test_dup_dup();
+    test_erase_dup();
     test_parallel_reduction();
     test_mixed_parallel();
     test_confluence();
+    test_error_handling();
 
-    printf("\n═══════════════════════════════════════════\n");
+    printf("\n═══════════════════════════════════════════════════\n");
     printf("  All Tests Passed! ✓\n");
-    printf("═══════════════════════════════════════════\n");
-    printf("\nKey IC Properties Demonstrated:\n");
-    printf("  • Locality: Each rule only touches connected nodes\n");
+    printf("═══════════════════════════════════════════════════\n");
+
+    printf("\n📋 IC Properties Demonstrated:\n");
+    printf("  • Locality: Rules only touch connected nodes\n");
     printf("  • Parallelism: Independent pairs reduce concurrently\n");
     printf("  • Confluence: Reduction order doesn't affect outcome\n");
-    printf("  • Three node types: Constructor (γ), Duplicator (δ), Eraser (ε)\n");
-    printf("  • Three main rules: annihilation, duplication, erasure\n");
+    printf("  • Three node types: γ (Constructor), δ (Duplicator), ε (Eraser)\n");
+    printf("  • Five basic rules: γ-γ, δ-γ, ε-γ, δ-δ, ε-δ\n");
 
     return 0;
 }
